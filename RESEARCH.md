@@ -110,10 +110,100 @@ OpenCode's MCP client (`packages/opencode/src/mcp/index.ts`) already subscribes 
 3. **Process restart** — defeats the purpose
 4. **Bun's `--hot` flag** — only works for HTTP servers with `Bun.serve()`, not MCP stdio
 
+## Core Architecture: Shell/Brain Split
+
+The self-reload requirement drives the entire architecture. open-reload must be able to reload its own logic at runtime.
+
+### The Constraint
+
+The MCP server holds a stdio pipe to OpenCode. This connection cannot be broken. But everything else — config loading, tool extraction, plugin management, tool routing — must be hot-swappable.
+
+### Solution: Two Layers
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Shell (never reloads, ~100 lines total)             │
+│  - MCP Server + stdio transport                      │
+│  - Process lifecycle                                 │
+│  - fs.watch() driver (owns handles, debounces)       │
+│  - Brain loader (purge + import + atomic swap)        │
+│  - 1 escape-hatch tool: openreload.reload            │
+│  - Hardcoded self-watch: src/brain/** → reload brain │
+├─────────────────────────────────────────────────────┤
+│  Brain (hot-reloadable, all interesting logic)        │
+│  - Config loading/validation                         │
+│  - Module loading with cache busting                 │
+│  - Tool extraction from plugins                      │
+│  - Tool routing (which plugin handles which call)    │
+│  - Plugin state management                           │
+│  - Watch policy (which paths, ignore patterns)       │
+└─────────────────────────────────────────────────────┘
+```
+
+### How It Works
+
+1. Shell imports `src/brain/entry.ts` dynamically via cache-busting `import()`
+2. Brain exports a `BrainFactory.create(ctx, init)` → returns a `BrainAPI` object
+3. Shell calls `activeBrain.listTools()`, `activeBrain.callTool()`, etc.
+4. On brain source change: shell purges all `src/brain/**` from Bun's module cache, re-imports `entry.ts`, creates new brain with snapshot from old brain, swaps pointer
+5. If new brain fails to initialize: old brain stays active, error logged to stderr
+
+### Atomic Swap Sequence
+
+```
+1. snapshot = activeBrain.exportSnapshot()
+2. purge all src/brain/** from Loader.registry
+3. newModule = import("src/brain/entry.ts?t=" + Date.now())
+4. newBrain = newModule.factory.create(ctx, { snapshot })
+5. if success: activeBrain.dispose() → activeBrain = newBrain
+6. if failure: keep activeBrain unchanged, log error
+```
+
+### Watcher Paradox Resolution
+
+The watcher is brain logic, but triggers brain reload. Solved by splitting **driver** (shell) from **policy** (brain):
+
+- Shell hardcodes: "any change in `src/brain/**` → reload brain directly" (no brain consultation)
+- Brain returns a `WatchPlan` for plugin directories (which paths, debounce, ignore patterns)
+- Shell runs `fs.watch()` according to the plan, forwards events to `brain.onFileEvents()`
+- Brain responds with effects: `{ reloadBrain?: boolean, refreshWatchPlan?: boolean }`
+
+### Self-Reload vs Plugin Reload
+
+Self-reload is a **control-plane** concern (separate mechanism, shell-owned).
+Plugin reload is a **data-plane** concern (brain-owned).
+
+Not treating self as "plugin index 0" avoids recursion and simplifies failure recovery.
+
+### State That Survives Brain Reload
+
+| Survives (shell-owned) | Rebuilt (brain-owned) |
+|------------------------|-----------------------|
+| MCP Server + stdio | Plugin module instances |
+| Brain pointer | Tool routing tables |
+| Watcher handles | Plugin runtime state |
+| Last-known-good snapshot | In-flight operations |
+| Last reload error | |
+
+### BrainAPI Contract (stable, lives in shell)
+
+```typescript
+type BrainAPI = {
+  listTools(): Promise<ToolSpec[]>;
+  callTool(call: ToolCall): Promise<ToolResult>;
+  getWatchPlan(): Promise<WatchPlan>;
+  onFileEvents(events: FileEvent[]): Promise<{ reloadBrain?: boolean; refreshWatchPlan?: boolean }>;
+  exportSnapshot(): Promise<BrainSnapshot>;
+  dispose(): Promise<void>;
+};
+```
+
+Shell never imports from `src/brain/`. The contract uses only plain objects (no classes, no brain-owned types).
+
 ## Open Questions
 
-1. **Module cleanup**: When re-importing, do we need to clean up previous module state (event listeners, timers, open file handles)?
-2. **Tool state**: If a tool has in-memory state (counters, caches), reload wipes it. Should we provide a persistence API?
-3. **Error handling**: If a reloaded plugin has syntax errors, what's the recovery? Keep the last known good version?
-4. **Multi-plugin**: Should one open-reload instance serve multiple plugins, or one instance per plugin?
-5. **Config format**: How does the user specify which plugin files to watch and how to extract tools from them?
+1. **Module cleanup**: When re-importing, do we need to clean up previous module state? Yes — brain must implement `dispose()` to clear intervals/handles.
+2. **Tool state**: Survives reload only if serialized into `BrainSnapshot`. Persistence API is a Phase 3 concern.
+3. **Error handling**: Last-known-good brain stays active. Shell-owned `openreload.reload` tool allows manual retry.
+4. **Multi-plugin**: Single open-reload instance serves N plugins. Brain handles namespacing.
+5. **Module graph purge**: Must invalidate entire `src/brain/**` tree, not just `entry.ts`, because relative imports resolve to cached modules without the `?t=` suffix.

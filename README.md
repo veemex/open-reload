@@ -1,21 +1,33 @@
 # open-reload
 
-Hot-reload MCP meta-plugin for [OpenCode](https://opencode.ai). Watches plugin source files, re-imports on change, and serves tools via MCP with live `tools/list_changed` notifications. No OpenCode restart required.
+Self-reloading MCP meta-plugin for [OpenCode](https://opencode.ai). Watches plugin source files **and its own brain**, re-imports on change, and serves tools via MCP with live `tools/list_changed` notifications. No restart required — not even to improve the tool itself.
 
-## How It Works
+## Core Idea
+
+open-reload can reload ~80% of itself at runtime. The architecture splits into:
+
+- **Shell** (~100 lines, never reloads): MCP stdio transport, process lifecycle, watcher handles, brain swapper
+- **Brain** (everything else, hot-reloadable): config loading, plugin management, tool routing, watch policy
+
+An AI agent can edit brain code → the shell detects the change → purges the brain module graph → re-imports → atomically swaps the live brain. If the new brain fails, the old one stays active.
 
 ```
-┌──────────────┐     stdio      ┌─────────────────┐     import()     ┌────────────┐
-│   OpenCode   │ <────────────> │  open-reload     │ <──────────────> │  Plugin A  │
-│   (client)   │   MCP proto    │  (MCP server)    │   cache-bust     │  Plugin B  │
-└──────────────┘                │                  │                  │  Plugin C  │
-                                │  fs.watch() ─────┤                  └────────────┘
-                                │  on change:      │
-                                │    1. re-import   │
-                                │    2. diff tools  │
-                                │    3. notify      │
-                                └─────────────────┘
+┌──────────────┐     stdio      ┌─────────────────────────────────────┐
+│   OpenCode   │ <────────────> │  Shell (permanent)                  │
+│   (client)   │   MCP proto    │  ┌─────────────────────────────┐    │
+└──────────────┘                │  │  Brain (hot-swappable)      │    │
+                                │  │  - config loading            │    │
+                                │  │  - plugin cache-bust import  │    │
+                                │  │  - tool extraction + routing │    │
+                                │  │  - watch policy              │    │
+                                │  └─────────────────────────────┘    │
+                                │                                     │
+                                │  fs.watch(src/brain/**) → reload    │
+                                │  fs.watch(plugin dirs)  → delegate  │
+                                └─────────────────────────────────────┘
 ```
+
+## How Plugin Reload Works
 
 1. **Watch** plugin source directories for `.ts`/`.js` changes
 2. **Re-import** the plugin module with Bun cache busting
@@ -23,14 +35,20 @@ Hot-reload MCP meta-plugin for [OpenCode](https://opencode.ai). Watches plugin s
 4. **Notify** client via MCP `notifications/tools/list_changed`
 5. Client re-fetches `tools/list` and gets the updated tools
 
-OpenCode's MCP client already handles `tools/list_changed` natively — no upstream changes needed.
+## How Self-Reload Works
 
-## Why MCP Instead of Native Plugin?
+1. Shell hardcodes a watcher on `src/brain/**`
+2. On any change: purge all brain modules from `Loader.registry`
+3. Re-import `src/brain/entry.ts` with cache-busting query string
+4. Call `factory.create(ctx, { snapshot })` with state from old brain
+5. If success: dispose old brain, swap pointer. If failure: keep old brain.
 
-| Approach | Hot-reload? | Upstream changes? | Tool add/remove at runtime? |
-|----------|------------|-------------------|-----------------------------|
-| Native plugin hack | Partial | Yes | No (tools snapshotted at startup) |
-| **MCP meta-server** | **Full** | **None** | **Yes** |
+## Why MCP?
+
+| Approach | Hot-reload? | Self-reload? | Upstream changes? |
+|----------|------------|-------------|-------------------|
+| Native plugin | No | No | N/A |
+| MCP meta-server | **Yes** | **~80%** | **None** |
 
 ## Quick Start
 
@@ -77,7 +95,7 @@ Create `open-reload.json` in one of:
   "mcpServers": {
     "open-reload": {
       "command": "bun",
-      "args": ["run", "/path/to/open-reload/src/index.ts"]
+      "args": ["run", "/path/to/open-reload/src/shell/main.ts"]
     }
   }
 }
@@ -87,21 +105,40 @@ Create `open-reload.json` in one of:
 
 ```
 src/
-  index.ts                 # Entry point — exports all modules
-  config/
-    types.ts               # Config + runtime state type definitions
-    loader.ts              # Config file resolution + validation
-  loader/
-    module-loader.ts       # Plugin import with Bun cache busting
-  watcher/
-    file-watcher.ts        # Debounced recursive file watcher
-  server/
-    mcp-server.ts          # MCP server (Phase 1 — not yet implemented)
+  index.ts                     # Barrel exports
+  shell/                       # PERMANENT — never reloads
+    brain-api.ts               # Stable contract (plain types, no brain imports)
+    brain-loader.ts            # Purge + import + atomic swap
+    watch-driver.ts            # fs.watch() orchestration + debouncing
+    core-tools.ts              # openreload_reload, openreload_status (always work)
+    mcp.ts                     # MCP server + stdio transport
+    main.ts                    # Process entry
+  brain/                       # HOT-RELOADABLE — all interesting logic
+    entry.ts                   # BrainFactory → BrainAPI
+    config/
+      types.ts                 # Config + plugin state types
+      loader.ts                # Config resolution + validation
+    loader/
+      module-loader.ts         # Bun cache-busting plugin import
+    router/
+      tool-router.ts           # Tool name → plugin execute routing
+    watcher/
+      policy.ts                # WatchPlan generation + event classification
+    state/
+      plugin-state.ts          # Per-plugin state management + snapshotting
 ```
+
+## Architecture Invariants
+
+1. Shell **never** imports from `src/brain/`. Contract lives in `src/shell/brain-api.ts`.
+2. Brain reload invalidates the **entire** `src/brain/**` module graph.
+3. Brain reload is **atomic**: new brain succeeds or old brain stays.
+4. `openreload_reload` tool **always works**, even if brain is broken.
+5. Shell self-watch triggers reload **without consulting brain**.
 
 ## Status
 
-**Phase 0** — Foundation scaffolded. See [TODO.md](./TODO.md) for the full roadmap and [RESEARCH.md](./RESEARCH.md) for the technical research behind this approach.
+**Phase 0** — Shell/brain architecture scaffolded. See [TODO.md](./TODO.md) for the full roadmap and [RESEARCH.md](./RESEARCH.md) for research findings.
 
 ## License
 
