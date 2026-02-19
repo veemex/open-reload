@@ -1,6 +1,6 @@
 import { readdirSync, statSync, existsSync } from "fs";
 import { join } from "path";
-import type { PluginConfig, ManagedTool } from "../config/types.ts";
+import type { PluginConfig, ManagedTool, PluginLoadResult } from "../config/types.ts";
 import type { ToolCallContext } from "../../shell/brain-api.ts";
 
 function qualifyName(config: PluginConfig, toolName: string): string {
@@ -10,7 +10,7 @@ function qualifyName(config: PluginConfig, toolName: string): string {
 
 export async function loadPluginModule(
   config: PluginConfig
-): Promise<ManagedTool[]> {
+): Promise<PluginLoadResult> {
   const importPath = `${config.entry}?t=${Date.now()}`;
 
   try {
@@ -70,14 +70,14 @@ function clearBunCache(absolutePath: string): void {
 async function extractTools(
   config: PluginConfig,
   mod: Record<string, unknown>
-): Promise<ManagedTool[]> {
+): Promise<PluginLoadResult> {
   switch (config.exportType) {
     case "opencode-plugin":
       return extractFromOpenCodePlugin(config, mod);
     case "tool-array":
-      return extractFromToolArray(config, mod);
+      return { tools: await extractFromToolArray(config, mod) };
     case "mcp-tools":
-      return extractFromMcpTools(config, mod);
+      return { tools: await extractFromMcpTools(config, mod) };
     default:
       throw new Error(
         `Unknown exportType "${config.exportType}" for plugin "${config.name}"`
@@ -88,7 +88,7 @@ async function extractTools(
 async function extractFromOpenCodePlugin(
   config: PluginConfig,
   mod: Record<string, unknown>
-): Promise<ManagedTool[]> {
+): Promise<PluginLoadResult> {
   const pluginFn =
     typeof mod.default === "function"
       ? (mod.default as (input: Record<string, unknown>) => unknown)
@@ -110,6 +110,12 @@ async function extractFromOpenCodePlugin(
     result && typeof result === "object"
       ? (result as Record<string, unknown>)
       : undefined;
+
+  const disposeFn =
+    typeof resultObj?.dispose === "function"
+      ? (resultObj.dispose as () => Promise<void>)
+      : undefined;
+
   const toolMap =
     (resultObj?.tool as Record<string, unknown> | undefined) ??
     (resultObj?.tools as Record<string, unknown> | undefined);
@@ -178,7 +184,7 @@ async function extractFromOpenCodePlugin(
     });
   }
 
-  return tools;
+  return { tools, dispose: disposeFn };
 }
 
 async function extractFromToolArray(

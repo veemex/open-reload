@@ -27,7 +27,7 @@ export class PluginStateManager {
     });
   }
 
-  setLoaded(name: string, config: PluginConfig, tools: ManagedTool[]): void {
+  setLoaded(name: string, config: PluginConfig, tools: ManagedTool[], dispose?: () => Promise<void>): void {
     const existing = this.plugins.get(name);
     this.plugins.set(name, {
       config,
@@ -36,6 +36,7 @@ export class PluginStateManager {
       status: "loaded",
       lastError: null,
       reloadCount: existing?.reloadCount ?? 1,
+      dispose,
     });
   }
 

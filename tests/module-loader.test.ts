@@ -18,7 +18,7 @@ describe("loadPluginModule — tool-array", () => {
   });
 
   it("loads all tools from tool-array plugin", async () => {
-    const tools = await loadPluginModule(config);
+    const { tools } = await loadPluginModule(config);
     expect(tools.length).toBe(3);
     const names = tools.map((t) => t.qualifiedName);
     expect(names).toContain("mock_echo");
@@ -27,7 +27,7 @@ describe("loadPluginModule — tool-array", () => {
   });
 
   it("qualifies tool names with plugin prefix", async () => {
-    const tools = await loadPluginModule(config);
+    const { tools } = await loadPluginModule(config);
     for (const tool of tools) {
       expect(tool.qualifiedName).toStartWith("mock_");
       expect(tool.pluginName).toBe("mock");
@@ -35,13 +35,13 @@ describe("loadPluginModule — tool-array", () => {
   });
 
   it("preserves descriptions", async () => {
-    const tools = await loadPluginModule(config);
+    const { tools } = await loadPluginModule(config);
     const echo = tools.find((t) => t.originalName === "echo");
     expect(echo?.description).toBe("Returns the input message as-is");
   });
 
   it("preserves inputSchema", async () => {
-    const tools = await loadPluginModule(config);
+    const { tools } = await loadPluginModule(config);
     const add = tools.find((t) => t.originalName === "add");
     expect(add?.inputSchema).toEqual({
       type: "object",
@@ -54,7 +54,7 @@ describe("loadPluginModule — tool-array", () => {
   });
 
   it("execute works correctly", async () => {
-    const tools = await loadPluginModule(config);
+    const { tools } = await loadPluginModule(config);
     const add = tools.find((t) => t.originalName === "add");
     const result = await add!.execute({ a: 10, b: 32 });
     expect(result).toBe("42");
@@ -93,7 +93,7 @@ describe("loadPluginModule — opencode-plugin", () => {
   });
 
   it("loads tools from opencode-plugin format", async () => {
-    const tools = await loadPluginModule(config);
+    const { tools } = await loadPluginModule(config);
     expect(tools.length).toBe(2);
     const names = tools.map((t) => t.qualifiedName);
     expect(names).toContain("mockoc_greet");
@@ -101,7 +101,7 @@ describe("loadPluginModule — opencode-plugin", () => {
   });
 
   it("qualifies tool names with plugin prefix", async () => {
-    const tools = await loadPluginModule(config);
+    const { tools } = await loadPluginModule(config);
     for (const tool of tools) {
       expect(tool.qualifiedName).toStartWith("mockoc_");
       expect(tool.pluginName).toBe("mockoc");
@@ -109,13 +109,13 @@ describe("loadPluginModule — opencode-plugin", () => {
   });
 
   it("preserves descriptions", async () => {
-    const tools = await loadPluginModule(config);
+    const { tools } = await loadPluginModule(config);
     const greet = tools.find((t) => t.originalName === "greet");
     expect(greet?.description).toBe("Greets a person by name");
   });
 
   it("converts Zod args to JSON Schema", async () => {
-    const tools = await loadPluginModule(config);
+    const { tools } = await loadPluginModule(config);
     const greet = tools.find((t) => t.originalName === "greet");
     const schema = greet?.inputSchema;
 
@@ -127,7 +127,7 @@ describe("loadPluginModule — opencode-plugin", () => {
   });
 
   it("converts multi-arg Zod schemas correctly", async () => {
-    const tools = await loadPluginModule(config);
+    const { tools } = await loadPluginModule(config);
     const multiply = tools.find((t) => t.originalName === "multiply");
     const schema = multiply?.inputSchema;
 
@@ -138,14 +138,14 @@ describe("loadPluginModule — opencode-plugin", () => {
   });
 
   it("execute invokes the original function with stub context", async () => {
-    const tools = await loadPluginModule(config);
+    const { tools } = await loadPluginModule(config);
     const greet = tools.find((t) => t.originalName === "greet");
     const result = await greet!.execute({ name: "World" });
     expect(result).toBe("Hello, World!");
   });
 
   it("execute computes correctly for multiply", async () => {
-    const tools = await loadPluginModule(config);
+    const { tools } = await loadPluginModule(config);
     const multiply = tools.find((t) => t.originalName === "multiply");
     const result = await multiply!.execute({ a: 7, b: 6 });
     expect(result).toBe("42");
@@ -163,7 +163,7 @@ describe("loadPluginModule — opencode-plugin", () => {
   });
 
   it("prefers 'tool' (singular) over 'tools' property", async () => {
-    const tools = await loadPluginModule(config);
+    const { tools } = await loadPluginModule(config);
     expect(tools.length).toBe(2);
   });
 });
@@ -189,8 +189,8 @@ describe("loadPluginModule — cache busting", () => {
       exportType: "tool-array",
     });
 
-    const tools1 = await loadPluginModule(config);
-    const tools2 = await loadPluginModule(config);
+    const { tools: tools1 } = await loadPluginModule(config);
+    const { tools: tools2 } = await loadPluginModule(config);
 
     expect(tools1.length).toBe(tools2.length);
     const r1 = await tools1[1].execute({ a: 1, b: 2 });

@@ -55,7 +55,7 @@ describe("context threading through module loader", () => {
   it("passes per-call context values to plugin execute", async () => {
     const tempDir = makeTempDir();
     const pluginPath = writeContextPlugin(tempDir);
-    const tools = await loadPluginModule(makeConfig(pluginPath));
+    const { tools } = await loadPluginModule(makeConfig(pluginPath));
     const inspect = tools.find((tool) => tool.originalName === "inspect_context");
 
     const result = await inspect!.execute(
@@ -74,7 +74,7 @@ describe("context threading through module loader", () => {
   it("falls back to default context values when none provided", async () => {
     const tempDir = makeTempDir();
     const pluginPath = writeContextPlugin(tempDir);
-    const tools = await loadPluginModule(makeConfig(pluginPath));
+    const { tools } = await loadPluginModule(makeConfig(pluginPath));
     const inspect = tools.find((tool) => tool.originalName === "inspect_context");
 
     const result = await inspect!.execute({});

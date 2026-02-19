@@ -45,7 +45,7 @@ describe("schema passthrough", () => {
   it("stores native zodInputSchema for opencode-plugin args", async () => {
     const pluginPath = resolve(MOCK_OC_PLUGIN_DIR, "index.ts");
 
-    const tools = await loadPluginModule(makeConfig(pluginPath, "opencode-plugin", "mockoc"));
+    const { tools } = await loadPluginModule(makeConfig(pluginPath, "opencode-plugin", "mockoc"));
     const greet = tools.find((tool) => tool.originalName === "greet");
 
     expect(greet?.zodInputSchema).toBeDefined();
@@ -74,7 +74,7 @@ export default async () => ({
 `
     );
 
-    const tools = await loadPluginModule(makeConfig(pluginPath, "opencode-plugin", "oc"));
+    const { tools } = await loadPluginModule(makeConfig(pluginPath, "opencode-plugin", "oc"));
     const ping = tools.find((tool) => tool.originalName === "ping");
 
     expect(ping?.zodInputSchema).toBeUndefined();
@@ -102,7 +102,7 @@ export const tools = [
 `
     );
 
-    const tools = await loadPluginModule(makeConfig(pluginPath, "tool-array", "arr"));
+    const { tools } = await loadPluginModule(makeConfig(pluginPath, "tool-array", "arr"));
     const search = tools.find((tool) => tool.originalName === "search");
 
     expect(search?.zodInputSchema).toBeDefined();
@@ -118,7 +118,7 @@ export const tools = [
   it("preserves zodInputSchema through ToolRouter.listSpecs", async () => {
     const pluginPath = resolve(MOCK_OC_PLUGIN_DIR, "index.ts");
 
-    const tools = await loadPluginModule(makeConfig(pluginPath, "opencode-plugin", "mockoc"));
+    const { tools } = await loadPluginModule(makeConfig(pluginPath, "opencode-plugin", "mockoc"));
     const router = new ToolRouter(tools);
     const [spec] = router
       .listSpecs()

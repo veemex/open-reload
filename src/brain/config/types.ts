@@ -27,6 +27,12 @@ export interface PluginState {
   status: "loaded" | "error" | "loading";
   lastError: string | null;
   reloadCount: number;
+  dispose?: () => Promise<void>;
+}
+
+export interface PluginLoadResult {
+  tools: ManagedTool[];
+  dispose?: () => Promise<void>;
 }
 
 export interface ManagedTool {

@@ -61,10 +61,20 @@ class Brain implements BrainAPI {
       const pluginConfig = this.config.plugins.find((p) => p.name === pluginName);
       if (!pluginConfig) continue;
 
+      const oldState = this.stateManager.getState(pluginName);
+      if (oldState?.dispose) {
+        try {
+          await oldState.dispose();
+        } catch (disposeErr) {
+          const disposeMsg = disposeErr instanceof Error ? disposeErr.message : String(disposeErr);
+          this.ctx.logErr(`Plugin dispose failed: ${pluginName}: ${disposeMsg}`);
+        }
+      }
+
       this.stateManager.setLoading(pluginName, pluginConfig);
       try {
-        const tools = await loadPluginModule(pluginConfig);
-        this.stateManager.setLoaded(pluginName, pluginConfig, tools);
+        const loaded = await loadPluginModule(pluginConfig);
+        this.stateManager.setLoaded(pluginName, pluginConfig, loaded.tools, loaded.dispose);
         this.ctx.logErr(`Plugin reloaded: ${pluginName}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -90,6 +100,16 @@ class Brain implements BrainAPI {
   }
 
   async dispose(): Promise<void> {
+    for (const state of this.stateManager.getAllStates()) {
+      if (state.dispose) {
+        try {
+          await state.dispose();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.ctx.logErr(`Plugin dispose failed: ${state.config.name}: ${msg}`);
+        }
+      }
+    }
     this.ctx.logErr("Brain disposed");
   }
 }
@@ -114,9 +134,9 @@ export const factory: BrainFactory = {
     for (const pluginConfig of config.plugins) {
       stateManager.setLoading(pluginConfig.name, pluginConfig);
       try {
-        const tools = await loadPluginModule(pluginConfig);
-        stateManager.setLoaded(pluginConfig.name, pluginConfig, tools);
-        ctx.logErr(`Plugin loaded: ${pluginConfig.name} (${tools.length} tools)`);
+        const loaded = await loadPluginModule(pluginConfig);
+        stateManager.setLoaded(pluginConfig.name, pluginConfig, loaded.tools, loaded.dispose);
+        ctx.logErr(`Plugin loaded: ${pluginConfig.name} (${loaded.tools.length} tools)`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         stateManager.setError(pluginConfig.name, pluginConfig, msg);
