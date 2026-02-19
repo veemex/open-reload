@@ -127,11 +127,13 @@ async function extractFromOpenCodePlugin(
       type: "object",
       properties: {},
     };
+    let zodInputSchema: unknown | undefined;
     if (def.args && typeof def.args === "object") {
       try {
         const { z } = await import("zod");
-        const zodObj = z.object(def.args as Record<string, unknown>);
-        const jsonSchema = z.toJSONSchema(zodObj);
+        const zodObjectSchema = z.object(def.args as Record<string, unknown>);
+        zodInputSchema = zodObjectSchema;
+        const jsonSchema = z.toJSONSchema(zodObjectSchema);
         inputSchema = jsonSchema as Record<string, unknown>;
       } catch {
         inputSchema = { type: "object", properties: {} };
@@ -155,6 +157,7 @@ async function extractFromOpenCodePlugin(
       pluginName: config.name,
       description: (def.description as string) || "",
       inputSchema,
+      zodInputSchema,
       execute: async (input: Record<string, unknown>, ctx?: ToolCallContext): Promise<string> => {
         const execContext = {
           sessionID: ctx?.sessionId ?? "open-reload",
@@ -178,10 +181,10 @@ async function extractFromOpenCodePlugin(
   return tools;
 }
 
-function extractFromToolArray(
+async function extractFromToolArray(
   config: PluginConfig,
   mod: Record<string, unknown>
-): ManagedTool[] {
+): Promise<ManagedTool[]> {
   const arr = mod.tools;
   if (!Array.isArray(arr)) {
     throw new Error(
@@ -189,8 +192,15 @@ function extractFromToolArray(
     );
   }
 
+  const { z } = await import("zod");
   return arr.map((tool: Record<string, unknown>) => {
     const originalExecute = tool.execute as ManagedTool["execute"];
+    let zodInputSchema: unknown | undefined;
+    if (tool.inputSchema) {
+      try {
+        zodInputSchema = z.fromJSONSchema(tool.inputSchema as Record<string, unknown>);
+      } catch {}
+    }
 
     return {
       qualifiedName: qualifyName(config, tool.name as string),
@@ -198,6 +208,7 @@ function extractFromToolArray(
       pluginName: config.name,
       description: (tool.description as string) || "",
       inputSchema: (tool.inputSchema as Record<string, unknown>) || {},
+      zodInputSchema,
       execute: async (input: Record<string, unknown>, context?: ToolCallContext): Promise<string> => {
         return originalExecute(input, context);
       },
@@ -205,10 +216,10 @@ function extractFromToolArray(
   });
 }
 
-function extractFromMcpTools(
+async function extractFromMcpTools(
   config: PluginConfig,
   mod: Record<string, unknown>
-): ManagedTool[] {
+): Promise<ManagedTool[]> {
   const obj = mod.tools;
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
     throw new Error(
@@ -221,6 +232,13 @@ function extractFromMcpTools(
     obj as Record<string, Record<string, unknown>>
   )) {
     const originalExecute = def.execute as ManagedTool["execute"];
+    let zodInputSchema: unknown | undefined;
+    if (def.inputSchema) {
+      try {
+        const { z } = await import("zod");
+        zodInputSchema = z.fromJSONSchema(def.inputSchema as Record<string, unknown>);
+      } catch {}
+    }
 
     tools.push({
       qualifiedName: qualifyName(config, name),
@@ -228,6 +246,7 @@ function extractFromMcpTools(
       pluginName: config.name,
       description: (def.description as string) || "",
       inputSchema: (def.inputSchema as Record<string, unknown>) || {},
+      zodInputSchema,
       execute: async (input: Record<string, unknown>, context?: ToolCallContext): Promise<string> => {
         return originalExecute(input, context);
       },

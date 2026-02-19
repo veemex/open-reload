@@ -2,6 +2,7 @@ export type ToolSpec = {
   name: string;
   description?: string;
   inputSchema?: unknown;
+  zodInputSchema?: unknown;
 };
 
 export type ToolCallContext = {

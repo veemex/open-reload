@@ -6,6 +6,7 @@ import type { BrainAPI, ToolSpec } from "./brain-api.ts";
 import { handleStatusCall, type ShellStatus } from "./core-tools.ts";
 
 type RegisteredTool = ReturnType<McpServer["registerTool"]>;
+type McpInputSchema = Parameters<McpServer["registerTool"]>[1]["inputSchema"];
 
 export type McpHandle = {
   server: McpServer;
@@ -67,11 +68,12 @@ export async function startMcpServer(opts: {
 
     const tools = await brain.listTools();
     for (const tool of tools) {
+      const schema = tool.zodInputSchema as McpInputSchema | undefined;
       const registered = server.registerTool(
         tool.name,
         {
           description: tool.description,
-          inputSchema: z.record(z.string(), z.unknown()),
+          inputSchema: schema ?? z.record(z.string(), z.unknown()),
         },
         async (args) =>
           brain.callTool({

@@ -35,5 +35,6 @@ export interface ManagedTool {
   pluginName: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  zodInputSchema?: unknown;
   execute: (input: Record<string, unknown>, context?: ToolCallContext) => Promise<string>;
 }

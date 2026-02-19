@@ -43,6 +43,7 @@ export class ToolRouter {
       name: tool.qualifiedName,
       description: tool.description,
       inputSchema: tool.inputSchema,
+      zodInputSchema: tool.zodInputSchema,
     }));
   }
 }
