@@ -11,6 +11,16 @@ export interface PluginConfig {
    */
   exportType: "opencode-plugin" | "tool-array" | "mcp-tools";
   prefix?: boolean;
+  /**
+   * Worktree root directory. When set, the plugin is loaded from the worktree
+   * instead of the parent repo. The relative path from watchDir to entry is
+   * preserved and resolved against this directory.
+   *
+   * Example: entry="/repos/foo/src/index.ts", watchDir="/repos/foo/src",
+   * worktreePath="/worktrees/env_123/foo/src"
+   * → effective entry = "/worktrees/env_123/foo/src/index.ts"
+   */
+  worktreePath?: string;
 }
 
 export interface OpenReloadConfig {
@@ -23,6 +33,7 @@ export interface OpenReloadConfig {
 export interface PluginState {
   config: PluginConfig;
   tools: ManagedTool[];
+  resources: ManagedResource[];
   lastReloadAt: number;
   status: "loaded" | "error" | "loading";
   lastError: string | null;
@@ -32,6 +43,7 @@ export interface PluginState {
 
 export interface PluginLoadResult {
   tools: ManagedTool[];
+  resources?: ManagedResource[];
   dispose?: () => Promise<void>;
 }
 
@@ -43,4 +55,13 @@ export interface ManagedTool {
   inputSchema: Record<string, unknown>;
   zodInputSchema?: unknown;
   execute: (input: Record<string, unknown>, context?: ToolCallContext) => Promise<string>;
+}
+
+export interface ManagedResource {
+  uri: string;
+  name: string;
+  pluginName: string;
+  description?: string;
+  mimeType?: string;
+  read: () => Promise<string>;
 }

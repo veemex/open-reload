@@ -1,4 +1,9 @@
-import type { PluginConfig, PluginState, ManagedTool } from "../config/types.ts";
+import type {
+  ManagedResource,
+  ManagedTool,
+  PluginConfig,
+  PluginState,
+} from "../config/types.ts";
 import type { BrainSnapshot } from "../../shell/brain-api.ts";
 
 type PluginSnapshotEntry = {
@@ -6,6 +11,7 @@ type PluginSnapshotEntry = {
   status: "loaded" | "error" | "loading";
   lastError: string | null;
   toolNames: string[];
+  resourceUris: string[];
 };
 
 type PluginsSnapshot = {
@@ -20,6 +26,7 @@ export class PluginStateManager {
     this.plugins.set(name, {
       config,
       tools: existing?.tools ?? [],       // keep old tools during reload
+      resources: existing?.resources ?? [],
       lastReloadAt: Date.now(),
       status: "loading",
       lastError: null,
@@ -27,11 +34,18 @@ export class PluginStateManager {
     });
   }
 
-  setLoaded(name: string, config: PluginConfig, tools: ManagedTool[], dispose?: () => Promise<void>): void {
+  setLoaded(
+    name: string,
+    config: PluginConfig,
+    tools: ManagedTool[],
+    resources: ManagedResource[] = [],
+    dispose?: () => Promise<void>
+  ): void {
     const existing = this.plugins.get(name);
     this.plugins.set(name, {
       config,
       tools,
+      resources,
       lastReloadAt: Date.now(),
       status: "loaded",
       lastError: null,
@@ -45,6 +59,7 @@ export class PluginStateManager {
     this.plugins.set(name, {
       config,
       tools: existing?.tools ?? [],       // keep last-known-good tools
+      resources: existing?.resources ?? [],
       lastReloadAt: Date.now(),
       status: "error",
       lastError: error,
@@ -71,6 +86,16 @@ export class PluginStateManager {
     return tools;
   }
 
+  getAllResources(): ManagedResource[] {
+    const resources: ManagedResource[] = [];
+    for (const state of this.plugins.values()) {
+      if (state.status !== "loading") {
+        resources.push(...state.resources);
+      }
+    }
+    return resources;
+  }
+
   toSnapshot(): BrainSnapshot {
     const entries: Record<string, PluginSnapshotEntry> = {};
     for (const [name, state] of this.plugins) {
@@ -79,6 +104,7 @@ export class PluginStateManager {
         status: state.status,
         lastError: state.lastError,
         toolNames: state.tools.map((t) => t.originalName),
+        resourceUris: state.resources.map((r) => r.uri),
       };
     }
     return { plugins: entries } as BrainSnapshot;

@@ -5,6 +5,20 @@ export type ToolSpec = {
   zodInputSchema?: unknown;
 };
 
+export type ResourceSpec = {
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+};
+
+export type ResourceContent = {
+  uri: string;
+  text?: string;
+  blob?: string;
+  mimeType?: string;
+};
+
 export type ToolCallContext = {
   cwd: string;
   sessionId?: string;
@@ -57,6 +71,8 @@ export type FileEventEffects = {
 export type BrainAPI = {
   listTools(): Promise<ToolSpec[]>;
   callTool(call: ToolCall): Promise<ToolResult>;
+  listResources?(): Promise<ResourceSpec[]>;
+  readResource?(uri: string): Promise<ResourceContent>;
   getWatchPlan(): Promise<WatchPlan>;
   onFileEvents(events: FileEvent[]): Promise<FileEventEffects>;
   exportSnapshot(): Promise<BrainSnapshot>;
