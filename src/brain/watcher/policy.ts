@@ -11,8 +11,9 @@ export function buildWatchPlan(config: OpenReloadConfig): WatchPlan {
   const roots = new Set<string>();
 
   for (const plugin of config.plugins) {
-    if (plugin.watchDir) {
-      roots.add(plugin.watchDir);
+    const root = plugin.worktreePath ?? plugin.watchDir;
+    if (root) {
+      roots.add(root);
     }
   }
 
@@ -34,7 +35,7 @@ export function classifyEvents(
 
   for (const event of events) {
     for (const plugin of plugins) {
-      const watchDir = plugin.config.watchDir;
+      const watchDir = plugin.config.worktreePath ?? plugin.config.watchDir;
       if (watchDir && event.path.startsWith(watchDir)) {
         reloadPlugins.add(plugin.config.name);
       }

@@ -102,12 +102,28 @@ function validateConfig(
       const prefix =
         typeof plugin.prefix === "boolean" ? plugin.prefix : true;
 
+      let worktreePath: string | undefined;
+      if (plugin.worktreePath != null) {
+        if (typeof plugin.worktreePath !== "string" || !plugin.worktreePath.trim()) {
+          throw new Error(
+            `Plugin "${plugin.name}": "worktreePath" must be a non-empty string`
+          );
+        }
+        worktreePath = resolve(plugin.worktreePath as string);
+        if (!existsSync(worktreePath)) {
+          throw new Error(
+            `Plugin "${plugin.name}": worktreePath does not exist: ${worktreePath}`
+          );
+        }
+      }
+
       return {
         name: plugin.name as string,
         entry,
         watchDir,
         exportType: exportType as PluginConfig["exportType"],
         prefix,
+        worktreePath,
       };
     }
   );
