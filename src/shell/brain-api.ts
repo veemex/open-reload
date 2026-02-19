@@ -4,9 +4,17 @@ export type ToolSpec = {
   inputSchema?: unknown;
 };
 
+export type ToolCallContext = {
+  cwd: string;
+  sessionId?: string;
+  agentId?: string;
+  metadata?: Record<string, unknown>;
+};
+
 export type ToolCall = {
   name: string;
   arguments?: unknown;
+  context?: ToolCallContext;
 };
 
 export type ToolResult = {

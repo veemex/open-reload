@@ -1,3 +1,5 @@
+import type { ToolCallContext } from "../../shell/brain-api.ts";
+
 export interface PluginConfig {
   name: string;
   entry: string;
@@ -8,6 +10,7 @@ export interface PluginConfig {
    * - "mcp-tools": named export `tools = { name: { description, inputSchema, execute } }`
    */
   exportType: "opencode-plugin" | "tool-array" | "mcp-tools";
+  prefix?: boolean;
 }
 
 export interface OpenReloadConfig {
@@ -32,5 +35,5 @@ export interface ManagedTool {
   pluginName: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  execute: (input: Record<string, unknown>) => Promise<string>;
+  execute: (input: Record<string, unknown>, context?: ToolCallContext) => Promise<string>;
 }

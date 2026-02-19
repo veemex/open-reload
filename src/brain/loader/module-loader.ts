@@ -1,6 +1,7 @@
 import { readdirSync, statSync, existsSync } from "fs";
 import { join } from "path";
 import type { PluginConfig, ManagedTool } from "../config/types.ts";
+import type { ToolCallContext } from "../../shell/brain-api.ts";
 
 function qualifyName(config: PluginConfig, toolName: string): string {
   if (config.prefix === false) return toolName;
@@ -139,21 +140,6 @@ async function extractFromOpenCodePlugin(
       inputSchema = def.schema as Record<string, unknown>;
     }
 
-    const stubContext = {
-      sessionID: "open-reload",
-      messageID: "open-reload",
-      agent: "open-reload",
-      directory: cwd,
-      worktree: cwd,
-      abort: new AbortController().signal,
-      metadata: () => {},
-      ask: async () => {
-        process.stderr.write(
-          `[open-reload] Plugin "${config.name}" tool "${name}" called ask() -- not supported in open-reload context\n`
-        );
-      },
-    };
-
     const originalExecute = def.execute as
       | ((args: Record<string, unknown>, context: unknown) => Promise<string>)
       | undefined;
@@ -169,8 +155,22 @@ async function extractFromOpenCodePlugin(
       pluginName: config.name,
       description: (def.description as string) || "",
       inputSchema,
-      execute: async (input: Record<string, unknown>): Promise<string> => {
-        return originalExecute(input, stubContext);
+      execute: async (input: Record<string, unknown>, ctx?: ToolCallContext): Promise<string> => {
+        const execContext = {
+          sessionID: ctx?.sessionId ?? "open-reload",
+          messageID: "open-reload",
+          agent: ctx?.agentId ?? "open-reload",
+          directory: ctx?.cwd ?? cwd,
+          worktree: ctx?.cwd ?? cwd,
+          abort: new AbortController().signal,
+          metadata: () => {},
+          ask: async () => {
+            process.stderr.write(
+              `[open-reload] Plugin "${config.name}" tool "${name}" called ask() -- not supported in open-reload context\n`
+            );
+          },
+        };
+        return originalExecute(input, execContext);
       },
     });
   }
@@ -189,14 +189,20 @@ function extractFromToolArray(
     );
   }
 
-  return arr.map((tool: Record<string, unknown>) => ({
-    qualifiedName: qualifyName(config, tool.name as string),
-    originalName: tool.name as string,
-    pluginName: config.name,
-    description: (tool.description as string) || "",
-    inputSchema: (tool.inputSchema as Record<string, unknown>) || {},
-    execute: tool.execute as ManagedTool["execute"],
-  }));
+  return arr.map((tool: Record<string, unknown>) => {
+    const originalExecute = tool.execute as ManagedTool["execute"];
+
+    return {
+      qualifiedName: qualifyName(config, tool.name as string),
+      originalName: tool.name as string,
+      pluginName: config.name,
+      description: (tool.description as string) || "",
+      inputSchema: (tool.inputSchema as Record<string, unknown>) || {},
+      execute: async (input: Record<string, unknown>, context?: ToolCallContext): Promise<string> => {
+        return originalExecute(input, context);
+      },
+    };
+  });
 }
 
 function extractFromMcpTools(
@@ -214,13 +220,17 @@ function extractFromMcpTools(
   for (const [name, def] of Object.entries(
     obj as Record<string, Record<string, unknown>>
   )) {
+    const originalExecute = def.execute as ManagedTool["execute"];
+
     tools.push({
       qualifiedName: qualifyName(config, name),
       originalName: name,
       pluginName: config.name,
       description: (def.description as string) || "",
       inputSchema: (def.inputSchema as Record<string, unknown>) || {},
-      execute: def.execute as ManagedTool["execute"],
+      execute: async (input: Record<string, unknown>, context?: ToolCallContext): Promise<string> => {
+        return originalExecute(input, context);
+      },
     });
   }
 
