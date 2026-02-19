@@ -22,9 +22,16 @@ type PluginsSnapshot = {
 
 export class PluginStateManager {
   private plugins: Map<string, PluginState> = new Map();
+  private restoredReloadCounts: Map<string, number> = new Map();
 
   setLoading(name: string, config: PluginConfig): void {
     const existing = this.plugins.get(name);
+    const restoredReloadCount = this.restoredReloadCounts.get(name);
+    const reloadCount = existing
+      ? existing.reloadCount + 1
+      : restoredReloadCount != null
+        ? restoredReloadCount + 1
+        : 0;
     this.plugins.set(name, {
       config,
       tools: existing?.tools ?? [],       // keep old tools during reload
@@ -33,8 +40,9 @@ export class PluginStateManager {
       lastReloadAt: Date.now(),
       status: "loading",
       lastError: null,
-      reloadCount: existing ? existing.reloadCount + 1 : 0,
+      reloadCount,
     });
+    this.restoredReloadCounts.delete(name);
   }
 
   setLoaded(
@@ -54,7 +62,7 @@ export class PluginStateManager {
       lastReloadAt: Date.now(),
       status: "loaded",
       lastError: null,
-      reloadCount: existing?.reloadCount ?? 1,
+      reloadCount: existing ? Math.max(existing.reloadCount, 1) : 1,
       dispose,
     });
   }
@@ -137,9 +145,9 @@ export class PluginStateManager {
         // Restore metadata from snapshot, keep tools from fresh load
         existing.reloadCount = entry.reloadCount;
         // Don't restore status/lastError — let fresh load determine those
+      } else {
+        this.restoredReloadCounts.set(name, entry.reloadCount);
       }
-      // If plugin not yet loaded, store the reload count for later
-      // (it'll be picked up when setLoading/setLoaded is called)
     }
   }
 }

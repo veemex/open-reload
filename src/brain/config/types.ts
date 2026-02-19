@@ -4,6 +4,9 @@ export interface PluginConfig {
   name: string;
   entry: string;
   watchDir?: string;
+  dependsOn?: string[];
+  namespace?: string;
+  agentVisibility?: string[];
   /**
    * - "opencode-plugin": default export `(ctx) => ({ tools: { name: tool() } })`
    * - "tool-array": named export `tools = [{ name, description, inputSchema, execute }]`
@@ -23,11 +26,20 @@ export interface PluginConfig {
   worktreePath?: string;
 }
 
+export interface SystemPromptConfig {
+  name: string;
+  content: string;
+  priority?: number; // Higher = earlier in prompt list
+}
+
 export interface OpenReloadConfig {
   plugins: PluginConfig[];
   debounceMs?: number;
   logLevel?: "error" | "warn" | "info" | "debug";
   logFile?: string;
+  systemPrompts?: SystemPromptConfig[];
+  /** Absolute path for disk-backed snapshot persistence. If set, snapshot is saved on dispose and loaded on create. */
+  statePath?: string;
 }
 
 export interface PluginState {
@@ -53,6 +65,8 @@ export interface ManagedTool {
   qualifiedName: string;
   originalName: string;
   pluginName: string;
+  namespace?: string;
+  agentVisibility?: string[];
   description: string;
   inputSchema: Record<string, unknown>;
   zodInputSchema?: unknown;

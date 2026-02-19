@@ -38,12 +38,27 @@ export class ToolRouter {
     }
   }
 
-  listSpecs(): ToolSpec[] {
-    return Array.from(this.routes.values()).map((tool) => ({
-      name: tool.qualifiedName,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-      zodInputSchema: tool.zodInputSchema,
-    }));
+  listSpecs(filter?: { agentId?: string; namespace?: string }): ToolSpec[] {
+    return Array.from(this.routes.values())
+      .filter((tool) => {
+        if (!filter) return true;
+        if (filter.namespace && tool.namespace && tool.namespace !== filter.namespace) {
+          return false;
+        }
+        if (
+          filter.agentId &&
+          tool.agentVisibility?.length &&
+          !tool.agentVisibility.includes(filter.agentId)
+        ) {
+          return false;
+        }
+        return true;
+      })
+      .map((tool) => ({
+        name: tool.qualifiedName,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        zodInputSchema: tool.zodInputSchema,
+      }));
   }
 }
