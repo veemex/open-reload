@@ -1,4 +1,5 @@
 import type {
+  ManagedPrompt,
   ManagedResource,
   ManagedTool,
   PluginConfig,
@@ -12,6 +13,7 @@ type PluginSnapshotEntry = {
   lastError: string | null;
   toolNames: string[];
   resourceUris: string[];
+  promptNames: string[];
 };
 
 type PluginsSnapshot = {
@@ -27,6 +29,7 @@ export class PluginStateManager {
       config,
       tools: existing?.tools ?? [],       // keep old tools during reload
       resources: existing?.resources ?? [],
+      prompts: existing?.prompts ?? [],
       lastReloadAt: Date.now(),
       status: "loading",
       lastError: null,
@@ -39,6 +42,7 @@ export class PluginStateManager {
     config: PluginConfig,
     tools: ManagedTool[],
     resources: ManagedResource[] = [],
+    prompts: ManagedPrompt[] = [],
     dispose?: () => Promise<void>
   ): void {
     const existing = this.plugins.get(name);
@@ -46,6 +50,7 @@ export class PluginStateManager {
       config,
       tools,
       resources,
+      prompts,
       lastReloadAt: Date.now(),
       status: "loaded",
       lastError: null,
@@ -60,6 +65,7 @@ export class PluginStateManager {
       config,
       tools: existing?.tools ?? [],       // keep last-known-good tools
       resources: existing?.resources ?? [],
+      prompts: existing?.prompts ?? [],
       lastReloadAt: Date.now(),
       status: "error",
       lastError: error,
@@ -96,6 +102,16 @@ export class PluginStateManager {
     return resources;
   }
 
+  getAllPrompts(): ManagedPrompt[] {
+    const prompts: ManagedPrompt[] = [];
+    for (const state of this.plugins.values()) {
+      if (state.status !== "loading") {
+        prompts.push(...state.prompts);
+      }
+    }
+    return prompts;
+  }
+
   toSnapshot(): BrainSnapshot {
     const entries: Record<string, PluginSnapshotEntry> = {};
     for (const [name, state] of this.plugins) {
@@ -105,6 +121,7 @@ export class PluginStateManager {
         lastError: state.lastError,
         toolNames: state.tools.map((t) => t.originalName),
         resourceUris: state.resources.map((r) => r.uri),
+        promptNames: state.prompts.map((p) => p.name),
       };
     }
     return { plugins: entries } as BrainSnapshot;

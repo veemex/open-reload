@@ -2,12 +2,13 @@ import { readdirSync, statSync, existsSync } from "fs";
 import { join, dirname, relative } from "path";
 import type {
   PluginConfig,
+  ManagedPrompt,
   ManagedResource,
   ManagedTool,
   PluginLoadResult,
 } from "../config/types.ts";
 import type { EventHandler, PluginEventBus } from "../events/event-bus.ts";
-import type { ToolCallContext } from "../../shell/brain-api.ts";
+import type { PromptMessage, ToolCallContext } from "../../shell/brain-api.ts";
 
 function qualifyName(config: PluginConfig, toolName: string): string {
   if (config.prefix === false) return toolName;
@@ -236,7 +237,29 @@ async function extractFromOpenCodePlugin(
     }
   }
 
-  return { tools, resources, dispose: disposeFn };
+  const promptMap = resultObj?.prompt as Record<string, unknown> | undefined;
+  const prompts: ManagedPrompt[] = [];
+  if (promptMap && typeof promptMap === "object" && !Array.isArray(promptMap)) {
+    for (const [name, promptDef] of Object.entries(promptMap)) {
+      const def = promptDef as Record<string, unknown>;
+      const getFn = def.get as ((args?: Record<string, string>) => Promise<PromptMessage[]>) | undefined;
+      if (typeof getFn !== "function") {
+        throw new Error(
+          `Plugin "${config.name}" prompt "${name}": missing get function`
+        );
+      }
+
+      prompts.push({
+        name,
+        pluginName: config.name,
+        description: typeof def.description === "string" ? def.description : undefined,
+        arguments: Array.isArray(def.arguments) ? (def.arguments as ManagedPrompt["arguments"]) : undefined,
+        get: async (args?: Record<string, string>): Promise<PromptMessage[]> => getFn(args),
+      });
+    }
+  }
+
+  return { tools, resources, prompts, dispose: disposeFn };
 }
 
 async function extractFromToolArray(

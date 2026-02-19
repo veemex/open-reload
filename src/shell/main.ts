@@ -38,6 +38,7 @@ export async function main(): Promise<void> {
       toolCount = (await activeBrain.listTools()).length;
       await mcp.syncBrainTools();
       await mcp.syncBrainResources();
+      await mcp.syncBrainPrompts();
       ctx.logErr(`Plugin file changed: ${relative(ctx.cwd, changedPath)}`);
     }
   };
@@ -81,6 +82,7 @@ export async function main(): Promise<void> {
       lastError = null;
       await mcp.syncBrainTools();
       await mcp.syncBrainResources();
+      await mcp.syncBrainPrompts();
       await syncPluginWatchers();
       ctx.logErr(`Brain reloaded (#${reloadCount})`);
     } catch (err) {

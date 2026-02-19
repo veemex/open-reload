@@ -7,12 +7,14 @@ import { handleStatusCall, type ShellStatus } from "./core-tools.ts";
 
 type RegisteredTool = ReturnType<McpServer["registerTool"]>;
 type RegisteredResource = { remove(): void };
+type RegisteredPrompt = { remove(): void };
 type McpInputSchema = Parameters<McpServer["registerTool"]>[1]["inputSchema"];
 
 export type McpHandle = {
   server: McpServer;
   syncBrainTools(): Promise<void>;
   syncBrainResources(): Promise<void>;
+  syncBrainPrompts(): Promise<void>;
   close(): Promise<void>;
 };
 
@@ -32,12 +34,14 @@ export async function startMcpServer(opts: {
       capabilities: {
         tools: { listChanged: true },
         resources: { listChanged: true },
+        prompts: { listChanged: true },
       },
     }
   );
 
   const brainToolHandles: RegisteredTool[] = [];
   const brainResourceHandles: RegisteredResource[] = [];
+  const brainPromptHandles: RegisteredPrompt[] = [];
 
   server.registerTool(
     "openreload_reload",
@@ -133,19 +137,69 @@ export async function startMcpServer(opts: {
     server.sendResourceListChanged();
   };
 
+  const syncBrainPrompts = async (): Promise<void> => {
+    for (const handle of brainPromptHandles.splice(0, brainPromptHandles.length)) {
+      handle.remove();
+    }
+
+    const brain = opts.getActiveBrain();
+    if (!brain || !brain.listPrompts || !brain.getPrompt) {
+      server.sendPromptListChanged();
+      return;
+    }
+
+    const prompts = await brain.listPrompts();
+    for (const prompt of prompts) {
+      const argsSchema: Record<string, z.ZodString> = {};
+      if (prompt.arguments) {
+        for (const arg of prompt.arguments) {
+          argsSchema[arg.name] = arg.required
+            ? z.string().describe(arg.description ?? "")
+            : z.string().optional().describe(arg.description ?? "") as unknown as z.ZodString;
+        }
+      }
+
+      const hasArgs = prompt.arguments && prompt.arguments.length > 0;
+      const registered = server.registerPrompt(
+        prompt.name,
+        {
+          description: prompt.description,
+          ...(hasArgs ? { argsSchema } : {}),
+        },
+        async (args) => {
+          const result = await brain.getPrompt!(prompt.name, args as Record<string, string> | undefined);
+          return {
+            messages: result.map((msg) => ({
+              role: msg.role,
+              content: msg.content,
+            })),
+          };
+        }
+      );
+      brainPromptHandles.push(registered);
+    }
+
+    server.sendPromptListChanged();
+  };
+
   await server.connect(opts.transport ?? new StdioServerTransport());
   await syncBrainTools();
   await syncBrainResources();
+  await syncBrainPrompts();
 
   return {
     server,
     syncBrainTools,
     syncBrainResources,
+    syncBrainPrompts,
     close: async () => {
       for (const handle of brainToolHandles.splice(0, brainToolHandles.length)) {
         handle.remove();
       }
       for (const handle of brainResourceHandles.splice(0, brainResourceHandles.length)) {
+        handle.remove();
+      }
+      for (const handle of brainPromptHandles.splice(0, brainPromptHandles.length)) {
         handle.remove();
       }
       await server.close();

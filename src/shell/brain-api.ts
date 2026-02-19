@@ -19,6 +19,17 @@ export type ResourceContent = {
   mimeType?: string;
 };
 
+export type PromptSpec = {
+  name: string;
+  description?: string;
+  arguments?: Array<{ name: string; description?: string; required?: boolean }>;
+};
+
+export type PromptMessage = {
+  role: "user" | "assistant";
+  content: { type: "text"; text: string };
+};
+
 export type ToolCallContext = {
   cwd: string;
   sessionId?: string;
@@ -73,6 +84,8 @@ export type BrainAPI = {
   callTool(call: ToolCall): Promise<ToolResult>;
   listResources?(): Promise<ResourceSpec[]>;
   readResource?(uri: string): Promise<ResourceContent>;
+  listPrompts?(): Promise<PromptSpec[]>;
+  getPrompt?(name: string, args?: Record<string, string>): Promise<PromptMessage[]>;
   getWatchPlan(): Promise<WatchPlan>;
   onFileEvents(events: FileEvent[]): Promise<FileEventEffects>;
   exportSnapshot(): Promise<BrainSnapshot>;

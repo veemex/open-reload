@@ -129,6 +129,7 @@ describe("PluginStateManager", () => {
             lastError: null,
             toolNames: ["alpha", "beta"],
             resourceUris: [],
+            promptNames: [],
           },
         },
       });

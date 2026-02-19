@@ -1,4 +1,4 @@
-import type { ToolCallContext } from "../../shell/brain-api.ts";
+import type { PromptMessage, ToolCallContext } from "../../shell/brain-api.ts";
 
 export interface PluginConfig {
   name: string;
@@ -34,6 +34,7 @@ export interface PluginState {
   config: PluginConfig;
   tools: ManagedTool[];
   resources: ManagedResource[];
+  prompts: ManagedPrompt[];
   lastReloadAt: number;
   status: "loaded" | "error" | "loading";
   lastError: string | null;
@@ -44,6 +45,7 @@ export interface PluginState {
 export interface PluginLoadResult {
   tools: ManagedTool[];
   resources?: ManagedResource[];
+  prompts?: ManagedPrompt[];
   dispose?: () => Promise<void>;
 }
 
@@ -64,4 +66,12 @@ export interface ManagedResource {
   description?: string;
   mimeType?: string;
   read: () => Promise<string>;
+}
+
+export interface ManagedPrompt {
+  name: string;
+  pluginName: string;
+  description?: string;
+  arguments?: Array<{ name: string; description?: string; required?: boolean }>;
+  get: (args?: Record<string, string>) => Promise<PromptMessage[]>;
 }

@@ -6,6 +6,8 @@ import type {
   BrainSnapshot,
   FileEvent,
   FileEventEffects,
+  PromptMessage,
+  PromptSpec,
   ResourceContent,
   ResourceSpec,
   ToolCall,
@@ -64,6 +66,24 @@ class Brain implements BrainAPI {
     }));
   }
 
+  async listPrompts(): Promise<PromptSpec[]> {
+    return this.stateManager.getAllPrompts().map((prompt) => ({
+      name: prompt.name,
+      description: prompt.description,
+      arguments: prompt.arguments,
+    }));
+  }
+
+  async getPrompt(name: string, args?: Record<string, string>): Promise<PromptMessage[]> {
+    const prompt = this.stateManager
+      .getAllPrompts()
+      .find((candidate) => candidate.name === name);
+    if (!prompt) {
+      throw new Error(`Unknown prompt: ${name}`);
+    }
+    return prompt.get(args);
+  }
+
   async readResource(uri: string): Promise<ResourceContent> {
     const resource = this.stateManager
       .getAllResources()
@@ -111,6 +131,7 @@ class Brain implements BrainAPI {
           pluginConfig,
           loaded.tools,
           loaded.resources ?? [],
+          loaded.prompts ?? [],
           loaded.dispose
         );
         this.ctx.logErr(`Plugin reloaded: ${pluginName}`);
@@ -181,10 +202,11 @@ export const factory: BrainFactory = {
           pluginConfig,
           loaded.tools,
           loaded.resources ?? [],
+          loaded.prompts ?? [],
           loaded.dispose
         );
         ctx.logErr(
-          `Plugin loaded: ${pluginConfig.name} (${loaded.tools.length} tools, ${(loaded.resources ?? []).length} resources)`
+          `Plugin loaded: ${pluginConfig.name} (${loaded.tools.length} tools, ${(loaded.resources ?? []).length} resources, ${(loaded.prompts ?? []).length} prompts)`
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

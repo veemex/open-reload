@@ -28,6 +28,7 @@ function pluginState(config: PluginConfig): PluginState {
     config,
     tools: [mockTool("run", config.name)],
     resources: [],
+    prompts: [],
     lastReloadAt: Date.now(),
     status: "loaded",
     lastError: null,
