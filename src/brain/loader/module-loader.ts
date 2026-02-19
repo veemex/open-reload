@@ -1,6 +1,12 @@
 import { readdirSync, statSync, existsSync } from "fs";
-import { join } from "path";
-import type { PluginConfig, ManagedTool, PluginLoadResult } from "../config/types.ts";
+import { join, dirname, relative } from "path";
+import type {
+  PluginConfig,
+  ManagedResource,
+  ManagedTool,
+  PluginLoadResult,
+} from "../config/types.ts";
+import type { EventHandler, PluginEventBus } from "../events/event-bus.ts";
 import type { ToolCallContext } from "../../shell/brain-api.ts";
 
 function qualifyName(config: PluginConfig, toolName: string): string {
@@ -8,21 +14,30 @@ function qualifyName(config: PluginConfig, toolName: string): string {
   return `${config.name}_${toolName}`;
 }
 
+export function resolveEffectiveEntry(config: PluginConfig): string {
+  if (!config.worktreePath) return config.entry;
+  const watchDir = config.watchDir ?? dirname(config.entry);
+  const relativeEntry = relative(watchDir, config.entry);
+  return join(config.worktreePath, relativeEntry);
+}
+
 export async function loadPluginModule(
-  config: PluginConfig
+  config: PluginConfig,
+  eventBus?: PluginEventBus
 ): Promise<PluginLoadResult> {
-  const importPath = `${config.entry}?t=${Date.now()}`;
+  const effectiveEntry = resolveEffectiveEntry(config);
+  const importPath = `${effectiveEntry}?t=${Date.now()}`;
 
   try {
     purgePluginModules(config);
   } catch {
     try {
-      clearBunCache(config.entry);
+      clearBunCache(effectiveEntry);
     } catch {}
   }
 
   const mod = await import(importPath);
-  return await extractTools(config, mod);
+  return await extractTools(config, mod, eventBus);
 }
 
 function collectModulePaths(dir: string): string[] {
@@ -49,7 +64,7 @@ function purgePluginModules(config: PluginConfig): void {
     | undefined;
   if (!registry?.delete) return;
 
-  const dir = config.watchDir ?? config.entry;
+  const dir = config.worktreePath ?? config.watchDir ?? config.entry;
   for (const modulePath of collectModulePaths(dir)) {
     registry.delete(modulePath);
   }
@@ -69,11 +84,12 @@ function clearBunCache(absolutePath: string): void {
 
 async function extractTools(
   config: PluginConfig,
-  mod: Record<string, unknown>
+  mod: Record<string, unknown>,
+  eventBus?: PluginEventBus
 ): Promise<PluginLoadResult> {
   switch (config.exportType) {
     case "opencode-plugin":
-      return extractFromOpenCodePlugin(config, mod);
+      return extractFromOpenCodePlugin(config, mod, eventBus);
     case "tool-array":
       return { tools: await extractFromToolArray(config, mod) };
     case "mcp-tools":
@@ -87,7 +103,8 @@ async function extractTools(
 
 async function extractFromOpenCodePlugin(
   config: PluginConfig,
-  mod: Record<string, unknown>
+  mod: Record<string, unknown>,
+  eventBus?: PluginEventBus
 ): Promise<PluginLoadResult> {
   const pluginFn =
     typeof mod.default === "function"
@@ -178,13 +195,48 @@ async function extractFromOpenCodePlugin(
               `[open-reload] Plugin "${config.name}" tool "${name}" called ask() -- not supported in open-reload context\n`
             );
           },
+          events: eventBus
+            ? {
+                emit: (type: string, payload: unknown) =>
+                  eventBus.emit({
+                    source: config.name,
+                    type,
+                    payload,
+                    timestamp: Date.now(),
+                  }),
+                on: (type: string, handler: EventHandler) => eventBus.on(type, handler, config.name),
+              }
+            : undefined,
         };
         return originalExecute(input, execContext);
       },
     });
   }
 
-  return { tools, dispose: disposeFn };
+  const resourceMap = resultObj?.resource as Record<string, unknown> | undefined;
+  const resources: ManagedResource[] = [];
+  if (resourceMap && typeof resourceMap === "object" && !Array.isArray(resourceMap)) {
+    for (const [name, resourceDef] of Object.entries(resourceMap)) {
+      const def = resourceDef as Record<string, unknown>;
+      const readFn = def.read as (() => Promise<string>) | undefined;
+      if (typeof readFn !== "function") {
+        throw new Error(
+          `Plugin "${config.name}" resource "${name}": missing read function`
+        );
+      }
+
+      resources.push({
+        uri: name,
+        name,
+        pluginName: config.name,
+        description: typeof def.description === "string" ? def.description : undefined,
+        mimeType: typeof def.mimeType === "string" ? def.mimeType : undefined,
+        read: async (): Promise<string> => readFn(),
+      });
+    }
+  }
+
+  return { tools, resources, dispose: disposeFn };
 }
 
 async function extractFromToolArray(

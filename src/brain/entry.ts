@@ -6,6 +6,8 @@ import type {
   BrainSnapshot,
   FileEvent,
   FileEventEffects,
+  ResourceContent,
+  ResourceSpec,
   ToolCall,
   ToolResult,
   ToolSpec,
@@ -13,6 +15,7 @@ import type {
 } from "../shell/brain-api.ts";
 import { loadConfig } from "./config/loader.ts";
 import type { OpenReloadConfig } from "./config/types.ts";
+import { PluginEventBus } from "./events/event-bus.ts";
 import { loadPluginModule } from "./loader/module-loader.ts";
 import { ToolRouter } from "./router/tool-router.ts";
 import { PluginStateManager } from "./state/plugin-state.ts";
@@ -26,6 +29,7 @@ class Brain implements BrainAPI {
   private router: ToolRouter;
   private stateManager: PluginStateManager;
   private watchPlan: WatchPlan;
+  private eventBus: PluginEventBus;
 
   constructor(
     ctx: BrainContext,
@@ -33,12 +37,14 @@ class Brain implements BrainAPI {
     router: ToolRouter,
     stateManager: PluginStateManager,
     watchPlan: WatchPlan,
+    eventBus: PluginEventBus,
   ) {
     this.ctx = ctx;
     this.config = config;
     this.router = router;
     this.stateManager = stateManager;
     this.watchPlan = watchPlan;
+    this.eventBus = eventBus;
   }
 
   async listTools(): Promise<ToolSpec[]> {
@@ -47,6 +53,31 @@ class Brain implements BrainAPI {
 
   async callTool(call: ToolCall): Promise<ToolResult> {
     return this.router.route(call);
+  }
+
+  async listResources(): Promise<ResourceSpec[]> {
+    return this.stateManager.getAllResources().map((resource) => ({
+      uri: resource.uri,
+      name: resource.name,
+      description: resource.description,
+      mimeType: resource.mimeType,
+    }));
+  }
+
+  async readResource(uri: string): Promise<ResourceContent> {
+    const resource = this.stateManager
+      .getAllResources()
+      .find((candidate) => candidate.uri === uri);
+    if (!resource) {
+      throw new Error(`Unknown resource: ${uri}`);
+    }
+
+    const text = await resource.read();
+    return {
+      uri: resource.uri,
+      text,
+      mimeType: resource.mimeType,
+    };
   }
 
   async getWatchPlan(): Promise<WatchPlan> {
@@ -62,6 +93,7 @@ class Brain implements BrainAPI {
       if (!pluginConfig) continue;
 
       const oldState = this.stateManager.getState(pluginName);
+      this.eventBus.removePlugin(pluginName);
       if (oldState?.dispose) {
         try {
           await oldState.dispose();
@@ -73,8 +105,14 @@ class Brain implements BrainAPI {
 
       this.stateManager.setLoading(pluginName, pluginConfig);
       try {
-        const loaded = await loadPluginModule(pluginConfig);
-        this.stateManager.setLoaded(pluginName, pluginConfig, loaded.tools, loaded.dispose);
+        const loaded = await loadPluginModule(pluginConfig, this.eventBus);
+        this.stateManager.setLoaded(
+          pluginName,
+          pluginConfig,
+          loaded.tools,
+          loaded.resources ?? [],
+          loaded.dispose
+        );
         this.ctx.logErr(`Plugin reloaded: ${pluginName}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -100,6 +138,7 @@ class Brain implements BrainAPI {
   }
 
   async dispose(): Promise<void> {
+    this.eventBus.clear();
     for (const state of this.stateManager.getAllStates()) {
       if (state.dispose) {
         try {
@@ -130,13 +169,23 @@ export const factory: BrainFactory = {
       stateManager.restoreFromSnapshot(init.snapshot);
     }
 
+    const eventBus = new PluginEventBus();
+
     // 3. Load each plugin
     for (const pluginConfig of config.plugins) {
       stateManager.setLoading(pluginConfig.name, pluginConfig);
       try {
-        const loaded = await loadPluginModule(pluginConfig);
-        stateManager.setLoaded(pluginConfig.name, pluginConfig, loaded.tools, loaded.dispose);
-        ctx.logErr(`Plugin loaded: ${pluginConfig.name} (${loaded.tools.length} tools)`);
+        const loaded = await loadPluginModule(pluginConfig, eventBus);
+        stateManager.setLoaded(
+          pluginConfig.name,
+          pluginConfig,
+          loaded.tools,
+          loaded.resources ?? [],
+          loaded.dispose
+        );
+        ctx.logErr(
+          `Plugin loaded: ${pluginConfig.name} (${loaded.tools.length} tools, ${(loaded.resources ?? []).length} resources)`
+        );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         stateManager.setError(pluginConfig.name, pluginConfig, msg);
@@ -150,7 +199,7 @@ export const factory: BrainFactory = {
     // 5. Build watch plan
     const watchPlan = buildWatchPlan(config);
 
-    return new Brain(ctx, config, router, stateManager, watchPlan);
+    return new Brain(ctx, config, router, stateManager, watchPlan, eventBus);
   },
 };
 

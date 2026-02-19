@@ -128,6 +128,7 @@ describe("PluginStateManager", () => {
             status: "loaded",
             lastError: null,
             toolNames: ["alpha", "beta"],
+            resourceUris: [],
           },
         },
       });
