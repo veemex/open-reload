@@ -99,11 +99,15 @@ function validateConfig(
         );
       }
 
+      const prefix =
+        typeof plugin.prefix === "boolean" ? plugin.prefix : true;
+
       return {
         name: plugin.name as string,
         entry,
         watchDir,
         exportType: exportType as PluginConfig["exportType"],
+        prefix,
       };
     }
   );

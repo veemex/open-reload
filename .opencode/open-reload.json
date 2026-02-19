@@ -1,0 +1,18 @@
+{
+  "plugins": [
+    {
+      "name": "mock",
+      "entry": "./dev/mock-plugin/index.ts",
+      "watchDir": "./dev/mock-plugin",
+      "exportType": "tool-array"
+    },
+    {
+      "name": "mockoc",
+      "entry": "./dev/mock-opencode-plugin/index.ts",
+      "watchDir": "./dev/mock-opencode-plugin",
+      "exportType": "opencode-plugin"
+    }
+  ],
+  "debounceMs": 300,
+  "logLevel": "debug"
+}

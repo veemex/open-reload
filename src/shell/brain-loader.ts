@@ -45,12 +45,13 @@ export async function loadBrain(
 
 export async function swapBrain(
   ctx: BrainContext,
-  activeBrain: BrainAPI | null
+  activeBrain: BrainAPI | null,
+  configPath?: string,
 ): Promise<BrainAPI> {
   const snapshot = activeBrain ? await activeBrain.exportSnapshot() : undefined;
 
   try {
-    const newBrain = await loadBrain(ctx, { snapshot });
+    const newBrain = await loadBrain(ctx, { snapshot, configPath });
 
     if (activeBrain) {
       await activeBrain.dispose();

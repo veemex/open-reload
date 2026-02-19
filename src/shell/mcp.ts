@@ -18,6 +18,7 @@ export async function startMcpServer(opts: {
   getActiveBrain: () => BrainAPI | null;
   onReloadRequest: () => Promise<void>;
   getStatus: () => ShellStatus;
+  getCwd?: () => string;
   transport?: Transport;
 }): Promise<McpHandle> {
   const server = new McpServer(
@@ -79,7 +80,7 @@ export async function startMcpServer(opts: {
           brain.callTool({
             name: tool.name,
             arguments: args,
-            context: { cwd: process.cwd() },
+            context: { cwd: opts.getCwd?.() ?? process.cwd() },
           })
       );
       brainToolHandles.push(registered);
