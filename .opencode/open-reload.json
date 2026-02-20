@@ -1,15 +1,9 @@
 {
   "plugins": [
     {
-      "name": "mock",
-      "entry": "./dev/mock-plugin/index.ts",
-      "watchDir": "./dev/mock-plugin",
-      "exportType": "tool-array"
-    },
-    {
-      "name": "mockoc",
-      "entry": "./dev/mock-opencode-plugin/index.ts",
-      "watchDir": "./dev/mock-opencode-plugin",
+      "name": "opencodingbox",
+      "entry": "/Users/mihaitrofin/Documents/GitHub/Ember/opencodingbox/src/index.ts",
+      "watchDir": "/Users/mihaitrofin/Documents/GitHub/Ember/opencodingbox/src",
       "exportType": "opencode-plugin"
     }
   ],

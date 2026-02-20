@@ -8,7 +8,7 @@ Self-reloading MCP meta-plugin for [OpenCode](https://opencode.ai). Watches plug
 
 open-reload can reload ~80% of itself at runtime. The architecture splits into:
 
-- **Shell** (~100 lines, never reloads): MCP stdio transport, process lifecycle, watcher handles, brain swapper
+- **Shell** (~650 lines, never reloads): MCP stdio transport, process lifecycle, watcher handles, brain swapper
 - **Brain** (everything else, hot-reloadable): config loading, plugin management, tool/resource/prompt routing, watch policy, event bus, state persistence
 
 An AI agent can edit brain code → the shell detects the change → purges the brain module graph → re-imports → atomically swaps the live brain. If the new brain fails, the old one stays active.
@@ -55,6 +55,44 @@ When a plugin with dependents changes, all downstream plugins are reloaded in de
 4. Call `factory.create(ctx, { snapshot })` with state from old brain
 5. If success: dispose old brain, swap pointer. If failure: keep old brain.
 
+## Native Plugin Mode
+
+open-reload can also run as a **native OpenCode plugin** instead of an MCP server. In this mode, it installs directly into OpenCode's plugin system and uses trampoline tools/hooks for hot-reload.
+
+### Setup
+
+Add to your OpenCode config (`.opencode/config.json`):
+```json
+{
+  "plugins": ["/path/to/open-reload/src/native/index.ts"]
+}
+```
+
+Plugin configuration is still read from `.opencode/open-reload.json` — same format as MCP mode.
+
+### How It Works
+
+1. At init, open-reload loads all configured plugins and creates **trampoline** tools + hooks
+2. Each trampoline delegates to a mutable backing function
+3. File watchers monitor plugin source directories
+4. On change: bust Bun module cache → re-import → swap backing implementations
+5. Next LLM turn uses the updated tool implementations — no restart needed
+
+### Trampoline Pattern
+
+```
+OpenCode calls tool "plugin_echo"
+  → Trampoline (fixed reference, registered at init)
+    → Backing function (mutable, swapped on reload)
+      → Actual plugin implementation
+```
+
+### V1 Limitations
+
+- Tool schemas (args, description) are fixed at init. Only execute functions are hot-swappable.
+- New tools added by reloaded plugins won't appear (the tool map is frozen at init).
+- Only `opencode-plugin` format supported in native mode.
+
 ## Why MCP?
 
 | Approach | Hot-reload? | Self-reload? | Upstream changes? |
@@ -62,12 +100,19 @@ When a plugin with dependents changes, all downstream plugins are reloaded in de
 | Native plugin | No | No | N/A |
 | MCP meta-server | **Yes** | **~80%** | **None** |
 
+With native mode, open-reload now supports both approaches:
+
+| Mode | Tool hot-reload | Hook hot-reload | Self-reload |
+|------|----------------|----------------|------------|
+| MCP server | Yes (full) | No | ~80% |
+| Native plugin | Yes (implementations only) | Yes | No |
+
 ## Quick Start
 
 ```bash
 bun install
 bun run dev    # Start the MCP server
-bun test       # Run tests (158 tests across 22 files)
+bun test       # Run tests (211 tests across 26 files)
 ```
 
 ## Configuration
@@ -323,6 +368,10 @@ src/
       policy.ts                # WatchPlan generation + event classification
     state/
       plugin-state.ts          # Per-plugin state management, snapshots, resource/prompt tracking
+  native/                      # NATIVE OpenCode plugin mode
+    index.ts                   # Plugin entry point (default export)
+    manager.ts                 # Plugin lifecycle: load, reload, watch
+    trampolines.ts             # Trampoline tool + hook backing management
 ```
 
 ## Architecture Invariants

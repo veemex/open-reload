@@ -9,8 +9,9 @@ import type {
 } from "../config/types.ts";
 import type { EventHandler, PluginEventBus } from "../events/event-bus.ts";
 import type { PromptMessage, ToolCallContext } from "../../shell/brain-api.ts";
+import { buildPluginInput } from "../context/opencode-runtime.ts";
 
-function qualifyName(config: PluginConfig, toolName: string): string {
+export function qualifyName(config: PluginConfig, toolName: string): string {
   if (config.prefix === false) return toolName;
   return `${config.name}_${toolName}`;
 }
@@ -56,18 +57,42 @@ function collectModulePaths(dir: string): string[] {
   return paths;
 }
 
+/**
+ * Bust Bun module cache for a plugin's source files.
+ * Attempts full directory purge first, falls back to single-entry clear.
+ */
+export function bustModuleCache(config: PluginConfig): void {
+  try {
+    purgePluginModules(config);
+  } catch {
+    try {
+      clearBunCache(resolveEffectiveEntry(config));
+    } catch { /* best effort */ }
+  }
+}
+
 function purgePluginModules(config: PluginConfig): void {
   const loader = (globalThis as Record<string, unknown>).Loader as
     | Record<string, unknown>
     | undefined;
-  const registry = loader?.registry as
-    | { delete?: (path: string) => void }
-    | undefined;
-  if (!registry?.delete) return;
+  const registry = loader?.registry;
+  if (!registry || typeof (registry as Record<string, unknown>).delete !== "function") return;
 
-  const dir = config.worktreePath ?? config.watchDir ?? config.entry;
+  const dir = config.worktreePath ?? config.watchDir ?? dirname(config.entry);
+
+  const map = registry as Map<string, unknown>;
+  if (typeof map.keys === "function") {
+    for (const key of [...map.keys()]) {
+      const cleanKey = key.split("?")[0];
+      if (cleanKey.startsWith(dir) && !cleanKey.includes("/node_modules/")) {
+        map.delete(key);
+      }
+    }
+    return;
+  }
+
   for (const modulePath of collectModulePaths(dir)) {
-    registry.delete(modulePath);
+    (registry as { delete: (k: string) => void }).delete(modulePath);
   }
 }
 
@@ -118,11 +143,8 @@ async function extractFromOpenCodePlugin(
   }
 
   const cwd = process.cwd();
-  const stubInput = {
-    directory: cwd,
-    worktree: cwd,
-  };
-  const result = await pluginFn(stubInput);
+  const pluginInput = await buildPluginInput(cwd);
+  const result = await pluginFn(pluginInput);
 
   const resultObj =
     result && typeof result === "object"

@@ -12,12 +12,14 @@ const CONFIG_FILENAME = "open-reload.json";
  * 3. Global: ~/.config/open-reload/open-reload.json
  */
 export async function loadConfig(
-  explicitPath?: string
+  explicitPath?: string,
+  baseDir?: string,
 ): Promise<OpenReloadConfig> {
+  const cwd = baseDir || process.cwd();
   const candidates = explicitPath
     ? [explicitPath]
     : [
-        resolve(process.cwd(), ".opencode", CONFIG_FILENAME),
+        resolve(cwd, ".opencode", CONFIG_FILENAME),
         resolve(
           process.env.HOME || "~",
           ".config",
@@ -30,7 +32,7 @@ export async function loadConfig(
     if (existsSync(candidate)) {
       const raw = await readFile(candidate, "utf-8");
       const parsed = JSON.parse(raw);
-      return validateConfig(parsed, candidate);
+      return validateConfig(parsed, candidate, cwd);
     }
   }
 
@@ -41,8 +43,10 @@ export async function loadConfig(
 
 function validateConfig(
   raw: unknown,
-  filePath: string
+  filePath: string,
+  configDir?: string,
 ): OpenReloadConfig {
+  const baseDir = configDir || dirname(filePath);
   if (!raw || typeof raw !== "object") {
     throw new Error(`Invalid config at ${filePath}: must be an object`);
   }
@@ -70,7 +74,9 @@ function validateConfig(
         throw new Error(`Plugin "${plugin.name}": "entry" is required`);
       }
 
-      const entry = resolve(plugin.entry as string);
+      const entry = isAbsolute(plugin.entry as string)
+        ? resolve(plugin.entry as string)
+        : resolve(baseDir, plugin.entry as string);
       if (!existsSync(entry)) {
         throw new Error(
           `Plugin "${plugin.name}": entry file does not exist: ${entry}`
@@ -90,7 +96,9 @@ function validateConfig(
       }
 
       const watchDir = plugin.watchDir
-        ? resolve(plugin.watchDir as string)
+        ? (isAbsolute(plugin.watchDir as string)
+            ? resolve(plugin.watchDir as string)
+            : resolve(baseDir, plugin.watchDir as string))
         : dirname(entry);
 
       if (!existsSync(watchDir)) {
@@ -162,7 +170,9 @@ function validateConfig(
             `Plugin "${plugin.name}": "worktreePath" must be a non-empty string`
           );
         }
-        worktreePath = resolve(plugin.worktreePath as string);
+        worktreePath = isAbsolute(plugin.worktreePath as string)
+          ? resolve(plugin.worktreePath as string)
+          : resolve(baseDir, plugin.worktreePath as string);
         if (!existsSync(worktreePath)) {
           throw new Error(
             `Plugin "${plugin.name}": worktreePath does not exist: ${worktreePath}`

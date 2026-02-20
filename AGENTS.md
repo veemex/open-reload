@@ -11,7 +11,7 @@ src/shell/   → PERMANENT. Never reloads. Touches stdio pipe.
 src/brain/   → HOT-RELOADABLE. All interesting logic. Auto-reloads on file change.
 ```
 
-### Shell (src/shell/) — ~200 lines total
+### Shell (src/shell/) — ~650 lines total
 
 | File | Role |
 |------|------|
@@ -86,6 +86,31 @@ The `PluginEventBus` is recreated on each brain load. Plugin handlers are re-reg
 - Brain prompts: dynamically synced via `syncBrainPrompts()` — calls `brain.listPrompts()` + `brain.getPrompt()`
 - `sendToolListChanged()`, `sendResourceListChanged()`, `sendPromptListChanged()` fire after every sync so clients re-fetch
 - `getCwd` callback on `startMcpServer` opts provides updateable CWD forwarding to tool context
+
+## Native OpenCode Plugin Mode
+
+open-reload can also run as a native OpenCode plugin (instead of MCP server). In this mode, it registers trampoline tools and lifecycle hooks that delegate to hot-reloadable plugin implementations.
+
+### Architecture
+
+The trampoline pattern: at init time, open-reload registers wrapper tools/hooks with OpenCode. Each wrapper delegates to a mutable backing function. On file change, only the backing is swapped — the registered tool/hook reference stays the same.
+
+- Tool implementations: hot-swappable via backing map (TrampolineRegistry)
+- Lifecycle hooks: hot-swappable via per-plugin hook entries
+- Tool schemas (args, description): fixed at init time (V1 limitation)
+- New tools after init: requires restart (V1 limitation — ToolRegistry.register() planned for V2)
+
+### Supported Hook Types
+
+All OpenCode lifecycle hooks are trampolined: event, config, chat.message, chat.params, chat.headers, permission.ask, command.execute.before, tool.execute.before, tool.execute.after, shell.env, and experimental hooks.
+
+Auth hooks (`auth`) are NOT trampolined due to their complex object structure.
+
+### Native Mode Limitations
+
+- Only `opencode-plugin` format plugins are supported. `tool-array` and `mcp-tools` are MCP-specific.
+- Tool schemas cannot change after init (execute functions can).
+- New tools cannot be added after init (backings for existing tools can be swapped).
 
 ## ToolCallContext
 
@@ -221,7 +246,7 @@ interface PluginLoadResult {
 ## Testing
 
 ```bash
-bun test          # 158 tests across 22 files
+bun test          # 211 tests across 26 files
 bun test <file>   # run specific test file
 ```
 
@@ -284,6 +309,10 @@ src/
       plugin-state.ts               # per-plugin state + resource/prompt aggregation + snapshot
     watcher/
       policy.ts                     # WatchPlan + event classification
+  native/                           # NATIVE OpenCode plugin mode
+    index.ts                        # Plugin entry point (default export)
+    manager.ts                      # Plugin lifecycle: load, reload, watch
+    trampolines.ts                  # Trampoline tool + hook backing management
 tests/
   brain-loader.test.ts              # brain load + swap + error recovery
   context-threading.test.ts         # ToolCallContext threading through call chain
@@ -297,6 +326,9 @@ tests/
   mcp-resources.test.ts             # MCP resource sync + readResource
   module-loader.test.ts             # plugin loading (all 3 formats) + Zod→JSON Schema + cache busting + resource/prompt extraction
   namespace-routing.test.ts         # namespace + agentVisibility filtering in ToolRouter
+  native-trampolines.test.ts        # TrampolineRegistry unit tests
+  native-manager.test.ts            # NativePluginManager lifecycle tests
+  native-integration.test.ts        # End-to-end native plugin tests
   persistent-state.test.ts          # statePath save/load + atomic write + crash recovery
   plugin-deps.test.ts               # dependsOn validation + topological sort + cascade reload
   plugin-dispose.test.ts            # dispose lifecycle: plugin reload + brain dispose
